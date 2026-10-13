@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Cosmic Zoom: Universe to Quantum World | WebXR Meta Quest 3</title>
+  <meta name="description" content="An immersive WebXR hand tracking VR journey from the observable universe down to the quantum world, featuring wave interference and the double-slit experiment on Meta Quest 3.">
+  <meta name="theme-color" content="#040711">
+
+  <link rel="stylesheet" href="./style.css">
+
+  <!-- Three.js Import Map -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./node_modules/three/build/three.module.js",
+      "three/addons/": "./node_modules/three/examples/jsm/"
+    }
+  }
+  </script>
+  <script>
+    window.addEventListener('error', function (e) {
+      console.error('GLOBAL ERROR:', e);
+      var toast = document.getElementById('vr-toast');
+      if (toast) {
+        toast.textContent = '❌ Script Error: ' + (e.message || e);
+        toast.className = 'vr-toast error';
+        toast.style.display = 'block';
+      }
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      console.error('PROMISE REJECTION:', e);
+      var toast = document.getElementById('vr-toast');
+      if (toast) {
+        toast.textContent = '❌ Promise Error: ' + (e.reason && e.reason.message || e.reason);
+        toast.className = 'vr-toast error';
+        toast.style.display = 'block';
+      }
+    });
+  </script>
+</head>
+<body>
+  <!-- WebGL 3D Canvas Container -->
+  <div id="scene-container"></div>
+
+  <!-- HTTPS Warning Banner (shown if loaded over HTTP outside localhost) -->
+  <div id="https-warning-banner" class="https-warning" style="display: none;"></div>
+
+  <!-- On-Screen VR Toast Message -->
+  <div id="vr-toast" class="vr-toast" style="display: none;"></div>
+
+  <!-- 2D Desktop / Preview HUD Overlay -->
+  <div class="hud-overlay" id="hud-overlay">
+    <!-- Header -->
+    <header class="hud-header">
+      <div class="brand-badge">
+        <span class="brand-icon">🌌</span>
+        <span class="brand-title">COSMIC ZOOM</span>
+      </div>
+
+      <div class="hud-stage-badge" id="hud-stage-name">
+        10²⁶ m • Observable Universe
+      </div>
+
+      <div class="header-actions">
+        <!-- Prominent Header VR Button -->
+        <button class="hud-btn vr-enter-btn" id="btn-header-vr" title="Enter WebXR VR Mode">
+          <span>🥽</span> <span class="vr-btn-text">ENTER VR</span>
+        </button>
+        <button class="hud-btn" id="btn-audio" title="Toggle Sound">
+          <span>🔊</span> <span id="audio-label">Audio On</span>
+        </button>
+        <button class="hud-btn" id="btn-cosmo" title="Talk to Cosmo">
+          <span>🤖</span> <span>Ask Cosmo</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Hand Tracking Gesture Guide Card -->
+    <aside class="gesture-guide-card">
+      <h3><span>✨</span> Quest 3 Hand Gestures</h3>
+      <div class="gesture-list">
+        <div class="gesture-item">
+          <span class="gesture-icon">🤏</span>
+          <div><strong>Pinch to Grab / Drag:</strong> Grip the 3D scale slider bead to glide through scales, or pinch 3D objects.</div>
+        </div>
+        <div class="gesture-item">
+          <span class="gesture-icon">👐</span>
+          <div><strong>Two-Hand Scale Zoom:</strong> Pinch both hands and pull apart to zoom inward; push together to zoom outward.</div>
+        </div>
+        <div class="gesture-item">
+          <span class="gesture-icon">☝️</span>
+          <div><strong>Point & Poke:</strong> Point with your index finger ray or tap 3D floating buttons directly.</div>
+        </div>
+        <div class="gesture-item">
+          <span class="gesture-icon">🖐️</span>
+          <div><strong>Open-Palm Navigator:</strong> Turn your palm towards your headset to summon the Hologram Wrist HUD!</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Bottom Scale Dock -->
+    <nav class="hud-dock" id="hud-dock" aria-label="Scale Stages Navigation">
+      <button class="dock-item active" data-stage="0">10²⁶m Universe</button>
+      <button class="dock-item" data-stage="1">10²¹m Milky Way</button>
+      <button class="dock-item" data-stage="2">10¹²m Solar System</button>
+      <button class="dock-item" data-stage="3">10⁷m Earth</button>
+      <button class="dock-item" data-stage="4">10⁰m Human</button>
+      <button class="dock-item" data-stage="5">10⁻⁵m Cell</button>
+      <button class="dock-item" data-stage="6">10⁻⁹m DNA</button>
+      <button class="dock-item" data-stage="7">10⁻¹⁰m Atom</button>
+      <button class="dock-item" data-stage="8">10⁻¹⁸m Quantum</button>
+    </nav>
+  </div>
+
+  <!-- Dedicated Floating VR Button (Bottom Right) -->
+  <button class="floating-vr-btn" id="btn-floating-vr" title="Enter WebXR VR Mode">
+    <span>🥽</span> <span class="vr-btn-text">ENTER VR (QUEST 3)</span>
+  </button>
+
+  <!-- Dock button script binding -->
+  <script type="module">
+    import { audio } from './src/audio.js';
+
+    // Dock stage clicks
+    const dockButtons = document.querySelectorAll('.dock-item');
+    dockButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const stageIdx = parseInt(btn.dataset.stage, 10);
+        if (window.__cosmicJumpStage) {
+          window.__cosmicJumpStage(stageIdx);
+        }
+        dockButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    // Cosmo button
+    document.getElementById('btn-cosmo').addEventListener('click', () => {
+      if (window.__cosmoGuide) {
+        window.__cosmoGuide.pokeCosmo();
+      }
+    });
+
+    // Audio mute button
+    const audioBtn = document.getElementById('btn-audio');
+    const audioLabel = document.getElementById('audio-label');
+    audioBtn.addEventListener('click', () => {
+      const isMuted = audio.toggleMute();
+      audioLabel.innerText = isMuted ? 'Muted' : 'Audio On';
+      audioBtn.querySelector('span').innerText = isMuted ? '🔇' : '🔊';
+    });
+  </script>
+
+  <!-- Main WebXR Application Logic -->
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

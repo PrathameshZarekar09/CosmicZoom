@@ -1,0 +1,14 @@
+{
+  "name": "cosmic-zoom-webxr",
+  "version": "1.0.0",
+  "description": "Cosmic Zoom: Universe to Quantum World WebXR experience for Meta Quest 3",
+  "main": "server.cjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  }
+}
