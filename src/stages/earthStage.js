@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { audio } from '../audio.js';
 
 export class EarthStage {
@@ -9,98 +10,13 @@ export class EarthStage {
     this.time = 0;
     this.interactables = [];
 
-    this.buildEarthGlobe();
-    this.buildCloudSphere();
-    this.buildAtmosphereGlow();
+    this.group.position.set(0, 1.25, -0.85);
+    this.scene.add(this.group);
+
     this.buildISS();
     this.buildMoon();
     this.buildContinentTarget();
-
-    this.group.position.set(0, 1.3, -0.85);
-    this.scene.add(this.group);
-  }
-
-  buildEarthGlobe() {
-    // Procedural Earth surface with stylized oceans & continents canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-
-    // Deep ocean blue
-    ctx.fillStyle = '#0f386b';
-    ctx.fillRect(0, 0, 1024, 512);
-
-    // Stylized continent landmasses (cartoon vibrant greens and golds)
-    ctx.fillStyle = '#10b981';
-    // Africa / Europe
-    ctx.beginPath();
-    ctx.ellipse(540, 240, 95, 130, 0.2, 0, Math.PI * 2);
-    ctx.ellipse(510, 140, 80, 60, -0.1, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Americas
-    ctx.fillStyle = '#059669';
-    ctx.beginPath();
-    ctx.ellipse(260, 150, 90, 80, -0.3, 0, Math.PI * 2);
-    ctx.ellipse(320, 320, 70, 120, 0.3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Asia & Australia
-    ctx.fillStyle = '#34d399';
-    ctx.beginPath();
-    ctx.ellipse(740, 170, 140, 90, 0.1, 0, Math.PI * 2);
-    ctx.ellipse(820, 350, 60, 45, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Antarctica ice cap
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(0, 470, 1024, 42);
-    ctx.fillRect(0, 0, 1024, 25);
-
-    const texture = new THREE.CanvasTexture(canvas);
-
-    const earthGeo = new THREE.SphereGeometry(0.32, 36, 36);
-    const earthMat = new THREE.MeshStandardMaterial({
-      map: texture,
-      roughness: 0.6,
-      metalness: 0.1
-    });
-    this.earth = new THREE.Mesh(earthGeo, earthMat);
-
-    this.earth.userData = {
-      isInteractive: true,
-      onPinchGrab: () => {
-        this.earth.rotation.y += 0.8;
-        audio.playClick();
-      }
-    };
-    this.interactables.push(this.earth);
-    this.group.add(this.earth);
-  }
-
-  buildCloudSphere() {
-    const cloudGeo = new THREE.SphereGeometry(0.326, 32, 32);
-    const cloudMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.25,
-      wireframe: true
-    });
-    this.clouds = new THREE.Mesh(cloudGeo, cloudMat);
-    this.group.add(this.clouds);
-  }
-
-  buildAtmosphereGlow() {
-    const atmGeo = new THREE.SphereGeometry(0.342, 32, 32);
-    const atmMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.22,
-      side: THREE.BackSide
-    });
-    const atm = new THREE.Mesh(atmGeo, atmMat);
-    this.group.add(atm);
+    this.loadEarthModel();
   }
 
   buildISS() {
@@ -141,12 +57,12 @@ export class EarthStage {
     const moonGeo = new THREE.SphereGeometry(0.07, 16, 16);
     const moonMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.8 });
     this.moon = new THREE.Mesh(moonGeo, moonMat);
-    this.moon.position.set(1.1, 0.25, -0.3);
+    this.moon.position.set(0.85, 0.25, -0.3);
     this.group.add(this.moon);
   }
 
   buildContinentTarget() {
-    // Glowing focal landing target on landmass to zoom into Human Body
+    // Glowing focal landing target beacon to zoom into Human Body
     const targetGeo = new THREE.RingGeometry(0.025, 0.04, 24);
     const targetMat = new THREE.MeshBasicMaterial({
       color: 0x00f2fe,
@@ -155,7 +71,7 @@ export class EarthStage {
       opacity: 0.85
     });
     this.targetMarker = new THREE.Mesh(targetGeo, targetMat);
-    this.targetMarker.position.set(0.12, 0.18, 0.26);
+    this.targetMarker.position.set(0.12, 0.18, 0.28);
     this.targetMarker.lookAt(0, 0, 0);
 
     this.targetMarker.userData = {
@@ -169,7 +85,43 @@ export class EarthStage {
       onHoverEnd: () => this.targetMarker.scale.setScalar(1.0)
     };
     this.interactables.push(this.targetMarker);
-    this.earth.add(this.targetMarker);
+    this.group.add(this.targetMarker);
+  }
+
+  loadEarthModel() {
+    try {
+      const loader = new GLTFLoader();
+      loader.load('./models/earth.glb', (gltf) => {
+        this.model = gltf.scene;
+        // Clean Object MaxDim is ~6.01m; scaling to ~0.6m diameter
+        this.model.scale.setScalar(0.1);
+        this.model.position.set(0, 0, 0);
+
+        this.model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+
+            // Make continents interactive
+            child.userData = {
+              isInteractive: true,
+              onPinchGrab: () => {
+                audio.playClick();
+                audio.playChirp('happy');
+                this.model.rotation.y += 0.5;
+              }
+            };
+            this.interactables.push(child);
+          }
+        });
+
+        this.group.add(this.model);
+      }, undefined, (err) => {
+        console.warn('earth.glb load note:', err);
+      });
+    } catch (e) {
+      console.warn('Error loading earth.glb:', e);
+    }
   }
 
   getInteractables() {
@@ -180,11 +132,8 @@ export class EarthStage {
     if (!this.group.visible) return;
     this.time += delta;
 
-    if (this.earth) {
-      this.earth.rotation.y += delta * 0.12;
-    }
-    if (this.clouds) {
-      this.clouds.rotation.y += delta * 0.15;
+    if (this.model) {
+      this.model.rotation.y += delta * 0.12;
     }
 
     // ISS orbit
@@ -201,7 +150,11 @@ export class EarthStage {
 
     if (this.moon) {
       const mAngle = this.time * 0.18;
-      this.moon.position.set(Math.cos(mAngle) * 1.05, 0.15, Math.sin(mAngle) * 1.05);
+      this.moon.position.set(Math.cos(mAngle) * 0.85, 0.15, Math.sin(mAngle) * 0.85);
+    }
+
+    if (this.targetMarker) {
+      this.targetMarker.rotation.z += delta * 1.5;
     }
   }
 }

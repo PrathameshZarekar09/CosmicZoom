@@ -37,6 +37,7 @@ export class QuantumStage {
     this.buildObserverEye();
     this.buildControlPanels();
     this.loadYDSEModel();
+    this.loadQuarkModel();
 
     this.group.position.set(0, 1.25, -1.05);
     this.scene.add(this.group);
@@ -255,6 +256,49 @@ export class QuantumStage {
     }
   }
 
+  loadQuarkModel() {
+    try {
+      const loader = new GLTFLoader();
+      loader.load('./models/Quark.glb', (gltf) => {
+        this.quarkMesh = gltf.scene;
+        // Clean Object MaxDim is ~6.07m; scaling to ~0.35m
+        this.quarkMesh.scale.setScalar(0.06);
+        this.quarkMesh.position.set(-0.38, 0.18, 0.22);
+
+        this.quarkMesh.traverse((child) => {
+          // Hide any backdrop/studio mesh
+          if (/floor|studio|background/i.test(child.name)) {
+            child.visible = false;
+            return;
+          }
+
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+
+        this.quarkMesh.userData = {
+          name: 'Quark Cluster (Proton & Neutron)',
+          isInteractive: true,
+          onPinchGrab: () => {
+            audio.playClick();
+            audio.playChirp('excited');
+            this.quarkMesh.scale.setScalar(0.08);
+            setTimeout(() => this.quarkMesh.scale.setScalar(0.06), 400);
+          }
+        };
+        this.interactables.push(this.quarkMesh);
+
+        this.group.add(this.quarkMesh);
+      }, undefined, (err) => {
+        console.warn('Quark.glb load note:', err);
+      });
+    } catch (e) {
+      console.warn('Error loading Quark.glb:', e);
+    }
+  }
+
   toggleObserver() {
     this.isObserverActive = !this.isObserverActive;
     if (this.isObserverActive) {
@@ -346,6 +390,11 @@ export class QuantumStage {
       b.rotation.x += delta * 0.8;
       b.rotation.y += delta * 1.2;
     });
+
+    if (this.quarkMesh) {
+      this.quarkMesh.rotation.y += delta * 0.4;
+      this.quarkMesh.rotation.x = Math.sin(this.time * 0.8) * 0.15;
+    }
 
     // Continuous beam emitter
     if (this.isEmitting) {

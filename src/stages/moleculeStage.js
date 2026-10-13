@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { audio } from '../audio.js';
 
 export class MoleculeStage {
@@ -9,75 +10,14 @@ export class MoleculeStage {
     this.time = 0;
     this.interactables = [];
     this.waterMolecules = [];
+    this.mixer = null;
 
-    this.buildDNAHelix();
+    this.group.position.set(0, 1.25, -0.85);
+    this.scene.add(this.group);
+
     this.buildWaterMolecules();
     this.buildAtomZoomTarget();
-
-    this.group.position.set(0, 1.3, -0.85);
-    this.scene.add(this.group);
-  }
-
-  buildDNAHelix() {
-    this.dnaGroup = new THREE.Group();
-    const pairsCount = 28;
-    const height = 0.9;
-    const radius = 0.14;
-    const twist = Math.PI * 3.5;
-
-    const baseColors = [
-      { name: 'A-T', c1: 0x00f2fe, c2: 0x3b82f6 }, // Adenine - Thymine
-      { name: 'C-G', c1: 0xff007f, c2: 0xfbbf24 }  // Cytosine - Guanine
-    ];
-
-    const sphereGeo = new THREE.SphereGeometry(0.016, 12, 12);
-    const rungGeo = new THREE.CylinderGeometry(0.005, 0.005, radius * 2, 8);
-    rungGeo.rotateZ(Math.PI / 2);
-
-    for (let i = 0; i < pairsCount; i++) {
-      const t = i / pairsCount;
-      const angle = t * twist;
-      const y = (t - 0.5) * height;
-
-      // Backbone node 1
-      const x1 = Math.cos(angle) * radius;
-      const z1 = Math.sin(angle) * radius;
-      const node1 = new THREE.Mesh(sphereGeo, new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
-      node1.position.set(x1, y, z1);
-      this.dnaGroup.add(node1);
-
-      // Backbone node 2
-      const x2 = Math.cos(angle + Math.PI) * radius;
-      const z2 = Math.sin(angle + Math.PI) * radius;
-      const node2 = new THREE.Mesh(sphereGeo, new THREE.MeshStandardMaterial({ color: 0xa855f7 }));
-      node2.position.set(x2, y, z2);
-      this.dnaGroup.add(node2);
-
-      // Base pair bridge rung
-      const pair = baseColors[i % 2];
-      const rung = new THREE.Mesh(rungGeo, new THREE.MeshStandardMaterial({
-        color: pair.c1,
-        emissive: pair.c1,
-        emissiveIntensity: 0.3
-      }));
-      rung.position.set(0, y, 0);
-      rung.rotation.y = -angle;
-
-      rung.userData = {
-        name: pair.name,
-        isInteractive: true,
-        onPinchGrab: () => {
-          rung.scale.setScalar(1.6);
-          setTimeout(() => rung.scale.setScalar(1.0), 400);
-          audio.playClick();
-          audio.playChirp('happy');
-        }
-      };
-      this.interactables.push(rung);
-      this.dnaGroup.add(rung);
-    }
-
-    this.group.add(this.dnaGroup);
+    this.loadDNAModel();
   }
 
   buildWaterMolecules() {
@@ -95,7 +35,7 @@ export class MoleculeStage {
       const oxy = new THREE.Mesh(oxyGeo, oxyMat);
       h2o.add(oxy);
 
-      // Hydrogen 1 (104.5 deg angle)
+      // Hydrogen 1
       const hyd1 = new THREE.Mesh(hydGeo, hydMat);
       hyd1.position.set(0.03, 0.022, 0);
       const bond1 = new THREE.Mesh(bondGeo, hydMat);
@@ -115,6 +55,7 @@ export class MoleculeStage {
       h2o.position.set(Math.cos(offsetAngle) * 0.32, (i - 1.5) * 0.16, Math.sin(offsetAngle) * 0.28);
 
       h2o.userData = {
+        name: 'H2O',
         isInteractive: true,
         onPinchGrab: () => {
           h2o.scale.setScalar(2.0);
@@ -143,6 +84,7 @@ export class MoleculeStage {
     this.atomTarget.position.set(0, 0.32, 0.16);
 
     this.atomTarget.userData = {
+      name: 'Atom Zoom Target',
       isInteractive: true,
       onPinchGrab: () => {
         audio.playClick();
@@ -156,6 +98,58 @@ export class MoleculeStage {
     this.group.add(this.atomTarget);
   }
 
+  loadDNAModel() {
+    try {
+      const loader = new GLTFLoader();
+      loader.load('./models/DNA.glb', (gltf) => {
+        this.model = gltf.scene;
+        // Clean Object MaxDim is ~10.42m; scaling to ~0.83m tall
+        this.model.scale.setScalar(0.08);
+        this.model.position.set(0, -0.4, 0);
+
+        this.model.traverse((child) => {
+          // Hide any backdrop/floor mesh
+          if (/floor|studio|background|speck/i.test(child.name)) {
+            child.visible = false;
+            return;
+          }
+
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+
+        // Setup DNA Rotation animation
+        if (gltf.animations && gltf.animations.length > 0) {
+          this.mixer = new THREE.AnimationMixer(this.model);
+          gltf.animations.forEach((clip) => {
+            const action = this.mixer.clipAction(clip);
+            action.play();
+          });
+        }
+
+        this.model.userData = {
+          name: 'DNA Helix',
+          isInteractive: true,
+          onPinchGrab: () => {
+            audio.playClick();
+            audio.playChirp('happy');
+            this.model.scale.setScalar(0.095);
+            setTimeout(() => this.model.scale.setScalar(0.08), 400);
+          }
+        };
+        this.interactables.push(this.model);
+
+        this.group.add(this.model);
+      }, undefined, (err) => {
+        console.warn('DNA.glb load note:', err);
+      });
+    } catch (e) {
+      console.warn('Error loading DNA.glb:', e);
+    }
+  }
+
   getInteractables() {
     return this.interactables;
   }
@@ -164,8 +158,10 @@ export class MoleculeStage {
     if (!this.group.visible) return;
     this.time += delta;
 
-    if (this.dnaGroup) {
-      this.dnaGroup.rotation.y += delta * 0.45;
+    if (this.mixer) {
+      this.mixer.update(delta);
+    } else if (this.model) {
+      this.model.rotation.y += delta * 0.45;
     }
 
     this.waterMolecules.forEach((h2o, i) => {
