@@ -140,6 +140,8 @@ export class CosmoGuide {
     });
     this.speechMesh = new THREE.Mesh(planeGeo, planeMat);
     this.speechMesh.position.set(0.48, 0.22, 0);
+    // Flip X to counteract the parent group's Math.PI Y-rotation that mirrors the texture
+    this.speechMesh.scale.x = -1;
     this.group.add(this.speechMesh);
   }
 

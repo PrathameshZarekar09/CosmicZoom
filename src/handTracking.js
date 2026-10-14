@@ -17,8 +17,8 @@ export class HandTrackingManager {
 
     // Hand state tracking
     this.hands = [
-      { hand: null, indexTip: null, thumbTip: null, palm: null, isPinching: false, pinchPos: new THREE.Vector3(), prevPinchPos: new THREE.Vector3(), pinchJustStarted: false },
-      { hand: null, indexTip: null, thumbTip: null, palm: null, isPinching: false, pinchPos: new THREE.Vector3(), prevPinchPos: new THREE.Vector3(), pinchJustStarted: false }
+      { hand: null, middleTip: null, thumbTip: null, palm: null, isPinching: false, pinchPos: new THREE.Vector3(), prevPinchPos: new THREE.Vector3(), pinchJustStarted: false },
+      { hand: null, middleTip: null, thumbTip: null, palm: null, isPinching: false, pinchPos: new THREE.Vector3(), prevPinchPos: new THREE.Vector3(), pinchJustStarted: false }
     ];
 
     // Two-hand gesture state
@@ -36,10 +36,11 @@ export class HandTrackingManager {
     this.draggedObject = null;
 
     // Callbacks
-    this.onTwoHandZoom = null; // (deltaDist) => {}
-    this.onSinglePinchDrag = null; // (handIndex, deltaMove, worldPos) => {}
-    this.onObjectClick = null; // (obj, hit) => {}
-    this.onPalmStateChange = null; // (isFacing, handIndex, palmTransform) => {}
+    this.onTwoHandZoom = null;       // (deltaDist) => {}
+    this.onSinglePinchDrag = null;   // (handIndex, deltaMove, worldPos) => {}
+    this.onSingleHandRotate = null;  // (handIndex, deltaX, deltaY) => {}  — thumb+middle single hand
+    this.onObjectClick = null;       // (obj, hit) => {}
+    this.onPalmStateChange = null;   // (isFacing, handIndex, palmTransform) => {}
 
     this.setupHands();
     this.setupVisualMarkers();
@@ -112,22 +113,23 @@ export class HandTrackingManager {
       if (!h.hand || !h.hand.joints) continue;
 
       const joints = h.hand.joints;
-      const indexTip = joints['index-finger-tip'];
+      const middleTip = joints['middle-finger-tip'];
       const thumbTip = joints['thumb-tip'];
       const wrist = joints['wrist'];
       const middleMetacarpal = joints['middle-finger-metacarpal'];
 
-      if (!indexTip || !thumbTip) continue;
+      if (!middleTip || !thumbTip) continue;
 
       const marker = i === 0 ? this.markerLeft : this.markerRight;
       marker.visible = true;
-      marker.position.copy(indexTip.position);
+      marker.position.copy(middleTip.position);
 
-      // 1. Pinch Detection (index tip to thumb tip < 3.2cm)
-      const dist = indexTip.position.distanceTo(thumbTip.position);
-      const isPinch = dist < 0.032;
+      // 1. Pinch Detection: THUMB TIP to MIDDLE FINGER TIP < 3.5cm
+      const dist = thumbTip.position.distanceTo(middleTip.position);
+      const isPinch = dist < 0.035;
 
-      h.pinchPos.copy(indexTip.position).add(thumbTip.position).multiplyScalar(0.5);
+      // Pinch position = midpoint between thumb and middle finger
+      h.pinchPos.copy(thumbTip.position).add(middleTip.position).multiplyScalar(0.5);
 
       if (isPinch && !h.isPinching) {
         // Pinch started
@@ -146,8 +148,15 @@ export class HandTrackingManager {
       } else if (isPinch && h.isPinching) {
         // Continuous pinch drag
         const deltaMove = new THREE.Vector3().subVectors(h.pinchPos, h.prevPinchPos);
-        if (this.onSinglePinchDrag && !this.twoHandActive) {
-          this.onSinglePinchDrag(i, deltaMove, h.pinchPos, this.draggedObject);
+        if (!this.twoHandActive) {
+          // Single-hand pinch: fire rotation callback
+          if (this.onSingleHandRotate && deltaMove.lengthSq() > 0.000001) {
+            this.onSingleHandRotate(i, deltaMove.x, deltaMove.y);
+          }
+          // Also fire drag callback for UI elements (e.g. slider bead)
+          if (this.onSinglePinchDrag) {
+            this.onSinglePinchDrag(i, deltaMove, h.pinchPos, this.draggedObject);
+          }
         }
         h.prevPinchPos.copy(h.pinchPos);
       }
@@ -184,18 +193,13 @@ export class HandTrackingManager {
         }
       }
 
-      // 3. Right Hand Index Pointing Ray (when not pinching)
-      if (i === 1 && !h.isPinching && joints['index-finger-phalanx-distal']) {
-        const rayDir = new THREE.Vector3().subVectors(indexTip.position, joints['index-finger-phalanx-distal'].position).normalize();
-        this.updatePointingRay(indexTip.position, rayDir);
-        rightPointing = true;
-      }
+      // Index-finger pointing ray is disabled — removed per user request
+      // (right-hand ray-cast removed; middle-finger pinch gestures handle all interaction)
     }
 
-    if (!rightPointing) {
-      this.pointerRay.visible = false;
-      this.reticle.visible = false;
-    }
+    // Pointer ray is disabled — keep hidden always
+    this.pointerRay.visible = false;
+    this.reticle.visible = false;
 
     // 4. Two-Hand Distance Gesture (Both Hands Pinching simultaneously)
     const bothPinching = this.hands[0].isPinching && this.hands[1].isPinching;
@@ -206,6 +210,8 @@ export class HandTrackingManager {
         this.initialTwoHandDist = currentDist;
         this.prevTwoHandDist = currentDist;
         this.twoHandLine.visible = true;
+        // Fire start callback so callers can snapshot the model's base scale
+        if (this.onTwoHandStart) this.onTwoHandStart();
       } else {
         const deltaDist = currentDist - this.prevTwoHandDist;
         if (Math.abs(deltaDist) > 0.001) {

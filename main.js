@@ -248,7 +248,6 @@ const stages = [
 ];
 
 let activeStageIndex = 0;
-let accumulatedZoomDelta = 0;
 
 function switchStage(newIndex) {
   if (newIndex < 0 || newIndex >= stages.length) return;
@@ -260,6 +259,8 @@ function switchStage(newIndex) {
   // Show new stage
   activeStageIndex = newIndex;
   stages[activeStageIndex].group.visible = true;
+  // Reset scale tracking so next pinch gesture re-baselines on the new model
+  _modelBaseScale = null;
 
   // Update audio, cosmo, and UI
   audio.updateStageAmbient(activeStageIndex);
@@ -292,39 +293,65 @@ window.__cosmicJumpStage = (idx) => switchStage(idx);
 // HAND TRACKING GESTURE BINDINGS
 // =============================================================================
 
-// 1. Two-Hand Zoom (Pulling apart zooms in toward quantum realm, pushing together zooms out)
-handTracking.onTwoHandZoom = (deltaDist) => {
-  accumulatedZoomDelta += deltaDist;
-  if (accumulatedZoomDelta > 0.08) {
-    // Zoom in toward quantum
-    accumulatedZoomDelta = 0;
-    if (activeStageIndex < stages.length - 1) {
-      switchStage(activeStageIndex + 1);
-    }
-  } else if (accumulatedZoomDelta < -0.08) {
-    // Zoom out toward universe
-    accumulatedZoomDelta = 0;
-    if (activeStageIndex > 0) {
-      switchStage(activeStageIndex - 1);
-    }
-  }
+// Helper: get the primary rotatable group of the active stage
+function getActiveStageModelGroup() {
+  const stage = stages[activeStageIndex];
+  // Each stage stores its main loaded model as `this.model`; fall back to the whole group
+  return stage.model || stage.group;
+}
+
+// 1. Two-Hand Zoom — continuously scale the active model
+//    Stretch hands apart = model grows | Squeeze = model shrinks
+let _modelBaseScale = null;   // captured at gesture start
+
+handTracking.onTwoHandStart = () => {
+  const target = getActiveStageModelGroup();
+  _modelBaseScale = target ? target.scale.x : null;
 };
 
-// 2. Single Pinch Drag on Slider Bead
+handTracking.onTwoHandZoom = (deltaDist) => {
+  const target = getActiveStageModelGroup();
+  if (!target) return;
+
+  // Capture base scale lazily if onTwoHandStart missed a loaded model
+  if (_modelBaseScale === null) _modelBaseScale = target.scale.x;
+
+  // Sensitivity: ~1 cm hand movement = ~8% scale change
+  const scaleFactor = 1.0 + deltaDist * 8.0;
+  const newScale = target.scale.x * scaleFactor;
+
+  // Clamp to 0.15× – 6× the scale captured at gesture start
+  const minScale = _modelBaseScale * 0.15;
+  const maxScale = _modelBaseScale * 6.0;
+  target.scale.setScalar(Math.max(minScale, Math.min(maxScale, newScale)));
+};
+
+// 2. Single-Hand Rotate (THUMB + MIDDLE FINGER of ONE hand — pinch and move to rotate the active model)
+const ROTATE_SENSITIVITY = 5.0;
+handTracking.onSingleHandRotate = (handIdx, deltaX, deltaY) => {
+  const target = getActiveStageModelGroup();
+  if (!target) return;
+  // Horizontal hand movement -> Y-axis rotation
+  target.rotation.y += deltaX * ROTATE_SENSITIVITY;
+  // Vertical hand movement -> X-axis rotation
+  target.rotation.x += deltaY * ROTATE_SENSITIVITY;
+};
+
+// 3. Single Pinch Drag on Slider Bead
 handTracking.onSinglePinchDrag = (handIdx, deltaMove, worldPos, draggedObj) => {
   if (draggedObj === ui3d.bead) {
     ui3d.handlePinchDrag(deltaMove);
   }
 };
 
-// 3. Object Clicks
+// 4. Object Clicks
 handTracking.onObjectClick = (obj) => {
   if (obj?.userData?.onPinchGrab) {
     obj.userData.onPinchGrab();
   }
 };
 
-// 4. Open-Palm Navigator Detection
+// 5. Open-Palm Navigator Detection
 handTracking.onPalmStateChange = (isFacing, handIdx, palmPos, palmNormal) => {
   ui3d.updatePalmTransform(isFacing, palmPos, palmNormal);
 };
@@ -384,9 +411,6 @@ window.addEventListener('keydown', (e) => {
   const num = parseInt(e.key, 10);
   if (!isNaN(num) && num >= 1 && num <= 9) {
     switchStage(num - 1);
-  } else if (e.code === 'Space') {
-    // Space toggles Quantum Observer
-    if (stages[8].toggleObserver) stages[8].toggleObserver();
   } else if (e.key === 'g' || e.key === 'G') {
     // Summon Cosmo
     cosmo.pokeCosmo();
